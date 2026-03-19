@@ -1,0 +1,24 @@
+@page "/register"
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<PageTitle>Registrar — Albion P2P</PageTitle>
+<div class="auth-page"><div class="auth-card">
+    <h2>Criar conta</h2><p class="auth-sub">Junte-se ao marketplace sem taxas!</p>
+    <div class="form-group"><label>Email</label><input type="email" class="form-input" @bind="_req.Email" placeholder="seu@email.com" /></div>
+    <div class="form-group"><label>Senha <small>(mín. 8 chars, 1 número, 1 maiúscula)</small></label><input type="password" class="form-input" @bind="_req.Password" placeholder="••••••••" /></div>
+    <div class="form-group"><label>Nick no Albion Online</label><input type="text" class="form-input" @bind="_req.AlbionNick" placeholder="SeuPersonagem" /></div>
+    <div class="form-group"><label>Servidor</label>
+        <select class="form-input" @bind="_req.ServerRegion">
+            @foreach (var r in Enum.GetValues<ServerRegion>()) { <option value="@r">@r</option> }
+        </select>
+    </div>
+    @if (_error is not null) { <div class="alert alert-error">@_error</div> }
+    <button class="btn btn-primary btn-full" @onclick="RegisterAsync" disabled="@_loading">@(_loading ? "Criando..." : "Criar conta")</button>
+    <p class="auth-link">Já tem conta? <a href="/login">Entrar</a></p>
+</div></div>
+
+@code {
+    readonly RegisterRequest _req = new(); string? _error; bool _loading;
+    async Task RegisterAsync() { _loading = true; _error = null; var (ok, err) = await Auth.RegisterAsync(_req); if (ok) Nav.NavigateTo("/"); else { _error = err; _loading = false; } }
+}

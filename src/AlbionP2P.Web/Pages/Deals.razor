@@ -1,0 +1,36 @@
+@page "/deals"
+@inject AuthService Auth
+@inject DealService DealSvc
+@inject NavigationManager Nav
+
+<PageTitle>Negociações — Albion P2P</PageTitle>
+@if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+
+<div class="page-deals">
+    <h1>Minhas Negociações</h1>
+    @if (_loading) { <div class="loading-state"><div class="spinner"></div></div> }
+    else if (_deals.Count == 0) { <div class="empty-state"><p>Nenhuma negociação ainda.</p><a href="/" class="btn btn-primary">Ver marketplace</a></div> }
+    else
+    {
+        <div class="deals-list">
+            @foreach (var d in _deals)
+            {
+                var isBuyer = d.BuyerId == Auth.CurrentUser!.Id;
+                <a href="/deals/@d.DealId" class="deal-row-link">
+                    <div class="deal-row-card">
+                        <div class="deal-role"><span class="badge @(isBuyer ? "badge-buy" : "badge-sell")">@(isBuyer ? "Comprador" : "Vendedor")</span></div>
+                        <div class="deal-price"><span class="label">Proposta</span><strong>@d.ProposedPrice.ToString("N0") silver</strong></div>
+                        <div class="deal-status"><span class="status-pill status-@d.Status.ToLower()">@d.Status</span></div>
+                        <div class="deal-date">@d.CreatedAt.ToLocalTime().ToString("dd/MM/yy HH:mm")</div>
+                        <span class="deal-arrow">→</span>
+                    </div>
+                </a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    List<DealDto> _deals = new(); bool _loading = true;
+    protected override async Task OnInitializedAsync() { _deals = await DealSvc.GetMyDealsAsync() ?? new(); _loading = false; }
+}

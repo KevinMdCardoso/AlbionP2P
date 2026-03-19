@@ -1,0 +1,19 @@
+@* ═══════════════════════════ Login.razor ════════════════════════════════════ *@
+@page "/login"
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<PageTitle>Entrar — Albion P2P</PageTitle>
+<div class="auth-page"><div class="auth-card">
+    <h2>Entrar</h2><p class="auth-sub">Bem-vindo de volta, aventureiro!</p>
+    <div class="form-group"><label>Email</label><input type="email" class="form-input" @bind="_req.Email" placeholder="seu@email.com" /></div>
+    <div class="form-group"><label>Senha</label><input type="password" class="form-input" @bind="_req.Password" placeholder="••••••••" /></div>
+    @if (_error is not null) { <div class="alert alert-error">@_error</div> }
+    <button class="btn btn-primary btn-full" @onclick="LoginAsync" disabled="@_loading">@(_loading ? "Entrando..." : "Entrar")</button>
+    <p class="auth-link">Não tem conta? <a href="/register">Registrar</a></p>
+</div></div>
+
+@code {
+    readonly LoginRequest _req = new(); string? _error; bool _loading;
+    async Task LoginAsync() { _loading = true; _error = null; var (ok, err) = await Auth.LoginAsync(_req); if (ok) Nav.NavigateTo("/"); else { _error = err; _loading = false; } }
+}

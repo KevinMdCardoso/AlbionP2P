@@ -1,0 +1,55 @@
+@page "/orders/new"
+@inject AuthService Auth
+@inject OrderService OrderSvc
+@inject NavigationManager Nav
+
+<PageTitle>Novo Pedido — Albion P2P</PageTitle>
+@if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+
+<div class="page-form"><div class="form-card">
+    <h2>Novo Pedido</h2><p class="form-sub">Anuncie sem pagar 6,5% de taxa</p>
+
+    <div class="form-row">
+        <div class="form-group"><label>Tipo</label>
+            <div class="toggle-group">
+                <button class="toggle-btn @(_req.Type == OrderType.Sell ? "active" : "")" @onclick='() => _req.Type = OrderType.Sell'>Venda</button>
+                <button class="toggle-btn @(_req.Type == OrderType.Buy  ? "active" : "")" @onclick='() => _req.Type = OrderType.Buy'>Compra</button>
+            </div>
+        </div>
+        <div class="form-group"><label>Servidor</label>
+            <select class="form-input" @bind="_req.ServerRegion">
+                @foreach (var r in Enum.GetValues<ServerRegion>()) { <option value="@r">@r</option> }
+            </select>
+        </div>
+    </div>
+
+    <div class="form-group"><label>Nome do item</label><input type="text" class="form-input" @bind="_req.ItemName" placeholder="Ex: Tier 8 Cultist Robe" /></div>
+
+    <div class="form-row">
+        <div class="form-group"><label>Categoria</label>
+            <select class="form-input" @bind="_req.Category">
+                @foreach (var c in Enum.GetValues<ItemCategory>()) { <option value="@c">@c</option> }
+            </select>
+        </div>
+        <div class="form-group"><label>Quantidade</label><input type="number" class="form-input" @bind="_req.Quantity" min="1" /></div>
+    </div>
+
+    <div class="form-group">
+        <label>Preço unitário (silver)</label>
+        <input type="number" class="form-input" @bind="_req.UnitPrice" min="1" />
+        @if (_req.UnitPrice > 0 && _req.Quantity > 0)
+        { <small class="form-hint">Total: @((_req.UnitPrice * _req.Quantity).ToString("N0")) silver · Economia: @((_req.UnitPrice * _req.Quantity * 0.065m).ToString("N0")) silver</small> }
+    </div>
+
+    @if (_error is not null) { <div class="alert alert-error">@_error</div> }
+    <div class="form-actions">
+        <a href="/dashboard" class="btn btn-secondary">Cancelar</a>
+        <button class="btn btn-primary" @onclick="CreateAsync" disabled="@_loading">@(_loading ? "Publicando..." : "Publicar pedido")</button>
+    </div>
+</div></div>
+
+@code {
+    readonly CreateOrderRequest _req = new() { ServerRegion = ServerRegion.Americas };
+    string? _error; bool _loading;
+    async Task CreateAsync() { _loading = true; _error = null; var (ok, _, err) = await OrderSvc.CreateAsync(_req); if (ok) Nav.NavigateTo("/dashboard"); else { _error = err; _loading = false; } }
+}

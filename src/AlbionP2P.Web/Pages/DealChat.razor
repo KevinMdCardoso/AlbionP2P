@@ -1,0 +1,199 @@
+@page "/deals/{DealId:guid}"
+@inject AuthService Auth
+@inject DealService DealSvc
+@inject ChatService ChatSvc
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
+<PageTitle>Negociação — Albion P2P</PageTitle>
+@if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+
+<div class="page-deal">
+    @if (_loading) { <div class="loading-state"><div class="spinner"></div></div> }
+    else if (_deal is null) { <div class="empty-state"><p>Negociação não encontrada.</p><a href="/deals" class="btn btn-secondary">Voltar</a></div> }
+    else
+    {
+        <div class="deal-layout">
+            <div class="deal-info-panel">
+                <a href="/deals" class="back-link">← Negociações</a>
+                <h2>Detalhes</h2>
+                <div class="deal-card">
+                    <div class="deal-row"><span class="dl">Status</span><span class="dv"><span class="status-pill status-@_deal.Status.ToLower()">@_deal.Status</span></span></div>
+                    <div class="deal-row"><span class="dl">Proposta</span><span class="dv price">@_deal.ProposedPrice.ToString("N0") silver</span></div>
+                    <div class="deal-row"><span class="dl">Comprador</span><span class="dv">@(_deal.BuyerId  == Auth.CurrentUser!.Id ? "Você" : "Contraparte")</span></div>
+                    <div class="deal-row"><span class="dl">Vendedor</span> <span class="dv">@(_deal.SellerId == Auth.CurrentUser!.Id ? "Você" : "Contraparte")</span></div>
+                    <div class="deal-row"><span class="dl">Criado em</span><span class="dv">@_deal.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span></div>
+                </div>
+                <div class="deal-actions">
+                    @if (_deal.Status == "Pending" && _deal.SellerId == Auth.CurrentUser!.Id)
+                    {
+                        <button class="btn btn-primary" @onclick="AcceptBySeller">Aceitar proposta</button>
+                        <button class="btn btn-danger"  @onclick="RejectAsync">Rejeitar</button>
+                    }
+                    @if (_deal.Status == "SellerAccepted" && _deal.BuyerId == Auth.CurrentUser!.Id)
+                    {
+                        <button class="btn btn-primary" @onclick="AcceptByBuyer">Confirmar aceitação</button>
+                        <button class="btn btn-danger"  @onclick="RejectAsync">Rejeitar</button>
+                    }
+                    @if (_deal.Status == "BothAccepted")
+                    { <button class="btn btn-success" @onclick="CompleteAsync">Confirmar trade realizado ✓</button> }
+                    @if (_deal.Status == "Completed")
+                    { <button class="btn btn-primary" @onclick="ShowRatingModal" disabled="@_ratingSubmitted">@(_ratingSubmitted ? "✓ Avaliado" : "Avaliar ⭐")</button> }
+                </div>
+                @if (_actionError   is not null) { <div class="alert alert-error">@_actionError</div> }
+                @if (_actionSuccess is not null) { <div class="alert alert-success">@_actionSuccess</div> }
+            </div>
+
+            <div class="chat-panel">
+                <div class="chat-header">
+                    <span>Chat</span>
+                    <span class="chat-status @(ChatSvc.IsConnected ? "online" : "offline")">@(ChatSvc.IsConnected ? "● conectado" : "○ conectando...")</span>
+                </div>
+                <div class="chat-messages">
+                    @if (_messages.Count == 0) { <div class="chat-empty">Nenhuma mensagem ainda. Inicie a conversa!</div> }
+                    @foreach (var m in _messages)
+                    {
+                        var mine = m.SenderId == Auth.CurrentUser!.Id;
+                        <div class="msg @(mine ? "msg-mine" : "msg-other")">
+                            @if (!mine) { <span class="msg-nick">@m.AlbionNick</span> }
+                            <div class="msg-bubble">@m.Content</div>
+                            <span class="msg-time">@m.SentAt.ToLocalTime().ToString("HH:mm")</span>
+                        </div>
+                    }
+                    @if (_chatError is not null) { <div class="alert alert-error chat-error">⚠ @_chatError</div> }
+                </div>
+                <div class="chat-input">
+                    <input type="text" class="form-input"
+                           @bind="_newMsg" @bind:event="oninput" @onkeydown="OnKey"
+                           placeholder="@(_deal.Status is "Rejected" or "Completed" ? "Negociação encerrada" : "Digite sua mensagem...")"
+                           disabled="@(_deal.Status is "Rejected" or "Completed")" />
+                    <button class="btn btn-primary"
+                            @onclick="SendAsync"
+                            disabled="@(string.IsNullOrWhiteSpace(_newMsg) || _deal.Status is "Rejected" or "Completed")">
+                        Enviar
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (_showRatingModal && _deal is not null)
+{
+    <div class="modal-overlay" @onclick="CloseRatingModal">
+        <div class="modal" @onclick:stopPropagation>
+            <h3>Avaliar Negociação</h3>
+            <p>Como foi sua experiência?</p>
+
+            <div class="form-group">
+                <label>Avaliação (1-5 estrelas)</label>
+                <div class="rating-input">
+                    <span class="star" @onclick="() => OnStarClick(5)" style="cursor: pointer;">@if (_ratingStars >= 5) { <span class="star-filled">⭐</span> } else { <span class="star-empty">☆</span> }</span>
+                    <span class="star" @onclick="() => OnStarClick(4)" style="cursor: pointer;">@if (_ratingStars >= 4) { <span class="star-filled">⭐</span> } else { <span class="star-empty">☆</span> }</span>
+                    <span class="star" @onclick="() => OnStarClick(3)" style="cursor: pointer;">@if (_ratingStars >= 3) { <span class="star-filled">⭐</span> } else { <span class="star-empty">☆</span> }</span>
+                    <span class="star" @onclick="() => OnStarClick(2)" style="cursor: pointer;">@if (_ratingStars >= 2) { <span class="star-filled">⭐</span> } else { <span class="star-empty">☆</span> }</span>
+                    <span class="star" @onclick="() => OnStarClick(1)" style="cursor: pointer;">@if (_ratingStars >= 1) { <span class="star-filled">⭐</span> } else { <span class="star-empty">☆</span> }</span>
+                </div>
+                <div class="rating-label">@_ratingStars.ToString() @(_ratingStars == 1 ? "estrela" : "estrelas")</div>
+            </div>
+
+            <div class="form-group">
+                <label>Comentário</label>
+                <textarea class="form-input" @bind="_ratingComment" rows="4" placeholder="Compartilhe sua experiência..."></textarea>
+            </div>
+
+            @if (_actionError is not null) { <p class="error-msg">@_actionError</p> }
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="CloseRatingModal" disabled="@_ratingSubmitting">Cancelar</button>
+                <button class="btn btn-primary" @onclick="SubmitRatingAsync" disabled="@_ratingSubmitting">@(_ratingSubmitting ? "Enviando..." : "Enviar Avaliação")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid DealId { get; set; }
+    DealDto? _deal; List<MessageDto> _messages = new();
+    string _newMsg = ""; bool _loading = true;
+    string? _actionError; string? _actionSuccess; string? _chatError;
+    bool _showRatingModal = false;
+    bool _ratingSubmitting = false;
+    bool _ratingSubmitted = false;
+    int _ratingStars = 5;
+    string _ratingComment = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _deal     = await DealSvc.GetByIdAsync(DealId);
+        _messages = await DealSvc.GetMessagesAsync(DealId) ?? new();
+        _loading  = false;
+        ChatSvc.OnMessageReceived += OnMsg;
+        ChatSvc.OnError           += OnErr;
+        try
+        {
+            await ChatSvc.ConnectAsync();
+            await ChatSvc.JoinDealAsync(DealId);
+        }
+        catch (Exception ex) { _chatError = $"Erro ao conectar ao chat: {ex.Message}"; }
+    }
+
+    async Task AcceptBySeller()  { var (ok, err) = await DealSvc.AcceptBySeller(DealId);  if (ok) { _deal!.Status = "SellerAccepted";  _actionSuccess = "Proposta aceita!";        _actionError = null; StateHasChanged(); } else _actionError = err; }
+    async Task AcceptByBuyer()   { var (ok, err) = await DealSvc.AcceptByBuyer(DealId);   if (ok) { _deal!.Status = "BothAccepted";   _actionSuccess = "Negociação aceita por ambos!"; _actionError = null; StateHasChanged(); } else _actionError = err; }
+    async Task RejectAsync()     { var (ok, err) = await DealSvc.RejectAsync(DealId);     if (ok) { _deal!.Status = "Rejected";      _actionSuccess = "Proposta rejeitada.";     _actionError = null; StateHasChanged(); } else _actionError = err; }
+    async Task CompleteAsync()   { var (ok, err) = await DealSvc.CompleteAsync(DealId);   if (ok) { _deal!.Status = "Completed";     _actionSuccess = "Deal concluído! Você pode avaliar agora."; _actionError = null; StateHasChanged(); } else _actionError = err; }
+
+    void ShowRatingModal() { _showRatingModal = true; _ratingStars = 5; _ratingComment = ""; _actionError = null; StateHasChanged(); }
+    void CloseRatingModal() => _showRatingModal = false;
+
+    void OnStarClick(int value)
+    {
+        Console.WriteLine($"[Rating] Star clicked: {value}");
+        _ratingStars = value;
+        Console.WriteLine($"[Rating] Current rating: {_ratingStars}");
+        StateHasChanged();
+    }
+
+    async Task SubmitRatingAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_ratingComment))
+        {
+            _actionError = "Comentário não pode ser vazio.";
+            return;
+        }
+        _ratingSubmitting = true;
+        var (ok, err) = await DealSvc.RateAsync(DealId, _ratingStars, _ratingComment);
+        _ratingSubmitting = false;
+
+        if (ok)
+        {
+            _ratingSubmitted = true;
+            _actionSuccess = "Avaliação registrada!";
+            _actionError = null;
+            CloseRatingModal();
+            _ratingStars = 5;
+            _ratingComment = "";
+            StateHasChanged();
+        }
+        else
+        {
+            _actionError = err;
+        }
+    }
+
+    async Task SendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newMsg)) return;
+        _chatError = null;
+        var msg = _newMsg;
+        _newMsg = "";
+        try   { await ChatSvc.SendMessageAsync(DealId, msg); }
+        catch (Exception ex) { _chatError = ex.Message; _newMsg = msg; }
+    }
+
+    async Task OnKey(KeyboardEventArgs e) { if (e.Key == "Enter" && !e.ShiftKey) await SendAsync(); }
+    void OnMsg(MessageDto m) { _messages.Add(m); InvokeAsync(StateHasChanged); }
+    void OnErr(string msg)   { _chatError = msg; InvokeAsync(StateHasChanged); }
+
+    public async ValueTask DisposeAsync() { ChatSvc.OnMessageReceived -= OnMsg; ChatSvc.OnError -= OnErr; await ChatSvc.LeaveDealAsync(DealId); }
+}

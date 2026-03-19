@@ -1,0 +1,133 @@
+@page "/"
+@inject OrderService  OrderSvc
+@inject DealService   DealSvc
+@inject AuthService   Auth
+@inject NavigationManager Nav
+
+<PageTitle>Albion P2P — Marketplace</PageTitle>
+
+<div class="page-home">
+    <div class="hero">
+        <h1>Marketplace P2P</h1>
+        <p>Compre e venda itens do Albion Online <strong>sem pagar taxa</strong> de 6,5%.</p>
+        @if (!Auth.IsAuthenticated)
+        {
+            <div class="hero-actions">
+                <a href="/register" class="btn btn-primary">Criar conta grátis</a>
+                <a href="/login"    class="btn btn-secondary">Entrar</a>
+            </div>
+        }
+    </div>
+
+    <div class="filters">
+        <select class="filter-select" @bind="FilterType">
+            <option value="">Compra e Venda</option>
+            <option value="Sell">Venda</option>
+            <option value="Buy">Compra</option>
+        </select>
+        <select class="filter-select" @bind="FilterCategory">
+            <option value="">Todas as categorias</option>
+            @foreach (var c in Enum.GetValues<ItemCategory>()) { <option value="@c">@c</option> }
+        </select>
+        <select class="filter-select" @bind="FilterRegion">
+            <option value="">Todos os servidores</option>
+            @foreach (var r in Enum.GetValues<ServerRegion>()) { <option value="@r">@r</option> }
+        </select>
+        <button class="btn btn-secondary" @onclick="LoadAsync">Filtrar</button>
+        @if (Auth.IsAuthenticated) { <a href="/orders/new" class="btn btn-primary ml-auto">+ Novo Pedido</a> }
+    </div>
+
+    @if (_loading) { <div class="loading-state"><div class="spinner"></div><p>Carregando pedidos...</p></div> }
+    else if (_orders?.Items.Count == 0) { <div class="empty-state"><p>Nenhum pedido encontrado. Seja o primeiro!</p></div> }
+    else
+    {
+        <div class="orders-grid">
+            @foreach (var o in _orders?.Items ?? [])
+            {
+                <div class="order-card @(o.Type == OrderType.Buy ? "card-buy" : "card-sell")">
+                    <div class="card-header">
+                        <span class="badge @(o.Type == OrderType.Buy ? "badge-buy" : "badge-sell")">@(o.Type == OrderType.Buy ? "COMPRA" : "VENDA")</span>
+                        <span class="badge badge-category">@o.Category</span>
+                        <span class="card-time">@TimeAgo(o.CreatedAt)</span>
+                    </div>
+                    <div class="card-body">
+                        <h3 class="item-name">@o.ItemName</h3>
+                        <div class="card-details">
+                            <div class="detail"><span class="label">Preço unit.</span><span class="value price">@o.UnitPrice.ToString("N0") <small>silver</small></span></div>
+                            <div class="detail"><span class="label">Quantidade</span><span class="value">@o.Quantity</span></div>
+                            <div class="detail"><span class="label">Total</span><span class="value price total">@((o.UnitPrice * o.Quantity).ToString("N0")) <small>silver</small></span></div>
+                            <div class="detail"><span class="label">Servidor</span><span class="value">@o.ServerRegion</span></div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <span class="seller">@(o.Type == OrderType.Sell ? "Vendedor" : "Comprador"): <strong>@o.AlbionNick</strong></span>
+                        @if (Auth.IsAuthenticated && Auth.CurrentUser!.Id != o.UserId)
+                        { <button class="btn btn-primary btn-sm" @onclick="() => OpenModal(o)">Negociar</button> }
+                    </div>
+                </div>
+            }
+        </div>
+        @if (_orders != null && _orders.TotalCount > _pageSize)
+        {
+            <div class="pagination">
+                <button class="btn btn-secondary" disabled="@(_page == 1)" @onclick="PrevPage">← Anterior</button>
+                <span>Página @_page</span>
+                <button class="btn btn-secondary" disabled="@(_orders.Items.Count < _pageSize)" @onclick="NextPage">Próxima →</button>
+            </div>
+        }
+    }
+</div>
+
+@if (_dealOrder is not null)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation>
+            <h3>Negociar — @_dealOrder.ItemName</h3>
+            <p>Preço anunciado: <strong>@_dealOrder.UnitPrice.ToString("N0") silver</strong></p>
+            <div class="form-group">
+                <label>Sua proposta (silver)</label>
+                <input type="number" class="form-input" @bind="_proposedPrice" min="1" />
+            </div>
+            @if (_dealError is not null) { <p class="error-msg">@_dealError</p> }
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancelar</button>
+                <button class="btn btn-primary"   @onclick="ConfirmDealAsync">Enviar proposta</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    OrderListDto? _orders;
+    bool _loading = true;
+    int  _page = 1; const int _pageSize = 20;
+    string FilterType { get; set; } = ""; string FilterCategory { get; set; } = ""; string FilterRegion { get; set; } = "";
+    OrderDto? _dealOrder; decimal _proposedPrice; string? _dealError;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    async Task LoadAsync()
+    {
+        _loading = true; StateHasChanged();
+        OrderType?    t = Enum.TryParse<OrderType>(FilterType, out var tv)        ? tv : null;
+        ItemCategory? c = Enum.TryParse<ItemCategory>(FilterCategory, out var cv) ? cv : null;
+        ServerRegion? r = Enum.TryParse<ServerRegion>(FilterRegion, out var rv)   ? rv : null;
+        _orders = await OrderSvc.GetRecentAsync(c, t, r, _page, _pageSize);
+        _loading = false;
+    }
+
+    void OpenModal(OrderDto o) { _dealOrder = o; _proposedPrice = o.UnitPrice; _dealError = null; }
+    void CloseModal() => _dealOrder = null;
+
+    async Task ConfirmDealAsync()
+    {
+        if (_dealOrder is null) return;
+        var (ok, deal, err) = await DealSvc.CreateAsync(new CreateDealRequest { OrderId = _dealOrder.OrderId, ProposedPrice = _proposedPrice });
+        if (ok && deal is not null) { _dealOrder = null; Nav.NavigateTo($"/deals/{deal.DealId}"); }
+        else _dealError = err;
+    }
+
+    async Task PrevPage() { _page--; await LoadAsync(); }
+    async Task NextPage() { _page++; await LoadAsync(); }
+    static string TimeAgo(DateTime dt) { var d = DateTime.UtcNow - dt.ToUniversalTime(); if (d.TotalMinutes < 1) return "agora"; if (d.TotalHours < 1) return $"{(int)d.TotalMinutes}min"; if (d.TotalDays < 1) return $"{(int)d.TotalHours}h"; return $"{(int)d.TotalDays}d"; }
+}

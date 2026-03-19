@@ -1,0 +1,34 @@
+@inherits LayoutComponentBase
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<div class="layout">
+    <nav class="navbar">
+        <a class="brand" href="/"><span class="brand-icon">⚔</span><span class="brand-name">Albion P2P</span></a>
+        <div class="nav-links">
+            <a href="/" class="nav-link">Marketplace</a>
+            @if (Auth.IsAuthenticated)
+            {
+                <a href="/dashboard" class="nav-link">Meus Pedidos</a>
+                <a href="/deals"     class="nav-link">Negociações</a>
+                <div class="nav-user">
+                    <span class="user-nick">@Auth.CurrentUser!.AlbionNick</span>
+                    <span class="user-rep">⭐ @Auth.CurrentUser.Reputation</span>
+                    <button class="btn-logout" @onclick="LogoutAsync">Sair</button>
+                </div>
+            }
+            else
+            {
+                <a href="/login"    class="nav-link btn-nav-login">Entrar</a>
+                <a href="/register" class="nav-link btn-nav-register">Registrar</a>
+            }
+        </div>
+    </nav>
+    <main class="main-content">@Body</main>
+    <footer class="footer"><p>Albion P2P — Negocie sem taxas. Albion Online é marca da Sandbox Interactive.</p></footer>
+</div>
+
+@code {
+    protected override void OnInitialized() => Auth.OnAuthChanged += StateHasChanged;
+    async Task LogoutAsync() { await Auth.LogoutAsync(); Nav.NavigateTo("/"); }
+}

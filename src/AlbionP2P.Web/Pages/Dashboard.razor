@@ -1,0 +1,47 @@
+@page "/dashboard"
+@inject AuthService Auth
+@inject OrderService OrderSvc
+@inject NavigationManager Nav
+
+<PageTitle>Meus Pedidos — Albion P2P</PageTitle>
+@if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+
+<div class="page-dashboard">
+    <div class="dashboard-header">
+        <div><h1>Meus Pedidos</h1><p>Olá, <strong>@Auth.CurrentUser!.AlbionNick</strong> · Reputação: ⭐ @Auth.CurrentUser.Reputation</p></div>
+        <a href="/orders/new" class="btn btn-primary">+ Novo Pedido</a>
+    </div>
+    @if (_loading) { <div class="loading-state"><div class="spinner"></div></div> }
+    else if (_orders?.Count == 0) { <div class="empty-state"><p>Nenhum pedido ainda.</p><a href="/orders/new" class="btn btn-primary">Criar primeiro pedido</a></div> }
+    else
+    {
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead><tr><th>Item</th><th>Tipo</th><th>Cat.</th><th>Qtd</th><th>Preço unit.</th><th>Total</th><th>Status</th><th>Data</th><th>Ação</th></tr></thead>
+                <tbody>
+                    @foreach (var o in _orders!)
+                    {
+                        <tr>
+                            <td><strong>@o.ItemName</strong></td>
+                            <td><span class="badge @(o.Type == OrderType.Buy ? "badge-buy" : "badge-sell")">@(o.Type == OrderType.Buy ? "Compra" : "Venda")</span></td>
+                            <td>@o.Category</td>
+                            <td>@o.Quantity</td>
+                            <td>@o.UnitPrice.ToString("N0")</td>
+                            <td>@((o.UnitPrice * o.Quantity).ToString("N0"))</td>
+                            <td><span class="status-pill status-@o.Status.ToLower()">@o.Status</span></td>
+                            <td>@o.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</td>
+                            <td>@if (o.Status is "Open" or "InNegotiation") { <button class="btn btn-danger btn-xs" @onclick="() => CancelAsync(o.OrderId)">Cancelar</button> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    @if (_error is not null) { <div class="alert alert-error" style="margin-top:1rem">@_error</div> }
+</div>
+
+@code {
+    List<OrderDto>? _orders; bool _loading = true; string? _error;
+    protected override async Task OnInitializedAsync() { _orders = await OrderSvc.GetMyOrdersAsync(); _loading = false; }
+    async Task CancelAsync(Guid id) { var (ok, err) = await OrderSvc.CancelAsync(id); if (ok) _orders = _orders?.Where(o => o.OrderId != id).ToList(); else _error = err; }
+}
