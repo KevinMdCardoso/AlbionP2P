@@ -1,0 +1,10 @@
+**/.git
+**/.vs
+**/.vscode
+**/obj
+**/bin
+**/*.user
+**/*.suo
+**/*.swp
+.github
+*.md

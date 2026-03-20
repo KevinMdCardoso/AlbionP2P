@@ -3,11 +3,23 @@ using AlbionP2P.Domain.Aggregates;
 using AlbionP2P.Infrastructure;
 using AlbionP2P.Infrastructure.Persistence;
 using AlbionP2P.API.Hubs;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Railway injeta PORT; ASP.NET Core usa ASPNETCORE_URLS por padrão
+builder.WebHost.UseUrls($"http://+:{Environment.GetEnvironmentVariable("PORT") ?? "8080"}");
+
+// Suporte a reverse proxy do Railway (X-Forwarded-Proto, X-Forwarded-For)
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddApplication();
@@ -69,19 +81,25 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// Deve ser o primeiro middleware — interpreta headers do proxy Railway
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Albion P2P v1"));
+    app.UseHttpsRedirection(); // Railway já termina TLS — só redireciona em dev
+    app.UseCors("DevPolicy");  // Em produção é same-origin, CORS não se aplica
 }
 
-app.UseHttpsRedirection();
-app.UseCors("DevPolicy");
+app.UseStaticFiles(); // serve os arquivos do Blazor WASM (wwwroot)
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
+app.MapFallbackToFile("index.html"); // SPA: rotas do Blazor que não são da API
 
+// Aplica migrations automaticamente ao subir (necessário no Railway)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AlbionDbContext>();

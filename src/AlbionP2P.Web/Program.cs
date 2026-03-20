@@ -7,7 +7,11 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<AlbionP2P.Web.App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-var apiBase = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7001";
+var apiBase = builder.Configuration["ApiBaseUrl"];
+// Em produção (Railway), ApiBaseUrl é vazio → usa o mesmo domínio da app
+apiBase = string.IsNullOrWhiteSpace(apiBase)
+    ? builder.HostEnvironment.BaseAddress
+    : apiBase;
 
 // ✅ CookieHandler: usa o fetch do browser com credentials:include
 //    HttpClientHandler NÃO é suportado no WebAssembly (PlatformNotSupportedException)
