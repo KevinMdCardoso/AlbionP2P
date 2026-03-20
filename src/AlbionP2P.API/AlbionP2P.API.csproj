@@ -1,8 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dcad9ed4-3da1-478a-97fa-e7d40eb542e4</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\AlbionP2P.Application\AlbionP2P.Application.csproj" />
