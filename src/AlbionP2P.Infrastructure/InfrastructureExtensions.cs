@@ -81,14 +81,34 @@ public static class InfrastructureExtensions
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        var connectionString = ResolveConnectionString(configuration);
+
         services.AddDbContext<AlbionDbContext>(o =>
-            o.UseSqlServer(configuration.GetConnectionString("DefaultConnection"),
-                sql => sql.MigrationsAssembly(typeof(AlbionDbContext).Assembly.FullName)));
+            o.UseNpgsql(connectionString,
+                npgsql => npgsql.MigrationsAssembly(typeof(AlbionDbContext).Assembly.FullName)));
 
         services.AddScoped<IOrderRepository, OrderRepository>();
         services.AddScoped<IDealRepository,  DealRepository>();
         services.AddScoped<IRatingRepository, RatingRepository>();
         services.AddScoped<IUnitOfWork>(sp  => sp.GetRequiredService<AlbionDbContext>());
         return services;
+    }
+
+    /// <summary>
+    /// Railway fornece DATABASE_URL no formato postgres://user:pass@host:port/db.
+    /// Se a variável de ambiente estiver presente, ela tem prioridade sobre appsettings.
+    /// </summary>
+    private static string ResolveConnectionString(IConfiguration configuration)
+    {
+        var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+        if (!string.IsNullOrWhiteSpace(databaseUrl))
+        {
+            var uri      = new Uri(databaseUrl);
+            var userInfo = uri.UserInfo.Split(':', 2);
+            return $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+        }
+
+        return configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
     }
 }
